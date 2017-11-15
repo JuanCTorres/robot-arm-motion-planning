@@ -11,7 +11,7 @@ from itertools import chain
 
 
 class RobotArmMotion:
-    l = 80  # length of robot arm
+    l = 50  # length of robot arm
 
     def __init__(self, start, goal, k=5, step_count=20, obstacles=None):
         assert len(start) == len(goal)
@@ -43,29 +43,6 @@ class RobotArmMotion:
             y_res = prev_y + (self.l * sin(sum(prev_angles)))
             res.append((x_res, y_res))
         return res
-
-    # def angle_to_x_y(self, x, y, theta):
-    #     """
-    #     :param x: baseline x
-    #     :param y: baseline y
-    #     :param theta: angle
-    #     :return: robot arm length x, robot arm length y
-    #     >>> r = RobotArmMotion(1); r.angle_to_x_y(0, 0, 2 * pi)
-    #
-    #     """
-    #     x_res = self.l * cos(theta)
-    #     y_res = self.l * sin(theta)
-    #     return x_res, y_res
-
-    @DeprecationWarning
-    def draw_config(self, angles: list):
-        endpoints = self.angles_to_x_y(angles)
-        i = 0
-        while i < len(endpoints):
-            x, y = (0, 0)
-            cs1lib.draw_line(x, y, endpoints[i][0], endpoints[i][1])
-            x, y = endpoints[i]
-            i += 1
 
     def solve(self) -> list:
         """
@@ -138,6 +115,7 @@ class RobotArmMotion:
         :param config2: Target configuration for a robot arm (theta1, theta2, ...)
         :return: Is the transition between config1 and config2 valid?
         """
+
         assert len(config1) == len(config2)
         res = []
         for arm_index in range(len(config1)):
@@ -150,6 +128,7 @@ class RobotArmMotion:
 
             step_size = (range_stop - range_start) / self.step_count
             arm_current_intermediate_configs = [range_start + j * step_size for j in range(self.step_count)]
+            arm_current_intermediate_configs.append(range_stop)
             res.append(arm_current_intermediate_configs)
 
         all_configs = [config1] + list(zip(*res)) + [config2]  # [theta, intermediate configs, theta']
@@ -164,6 +143,8 @@ class RobotArmMotion:
             # of the previous arm and the endpoints of the current arm
             line_coords = [endpoint_list[i: i + 2] for i in range(len(endpoint_list) - 1)]
             line_objs = [LineString(coord) for coord in line_coords]
+            assert line_coords is not None and line_objs is not None
+            inter = any([l.intersects(p) for l in line_objs for p in self.obstacles])
             if any([l.intersects(p) for l in line_objs for p in self.obstacles]):
                 return False
         return True
@@ -171,11 +152,18 @@ class RobotArmMotion:
     def get_endpoints_with_start(self, endpoint_list: list) -> list:
         """
         Transforms endpoints for each of the robot arms into endpoints for each robot arm AND a starting location (0, 0)
+
         :param endpoint_list: (x, y) endpoints for each arm of the robot
         """
         return [[0] * 2] + list(endpoint_list)
 
     def get_line_coordinates(self, endpoints_with_start: list) -> list:
+        """
+        Gets the line coordinates for all the lines representing the arms of the robot.
+
+        :param endpoints_with_start:
+        :return: list of 4-tuples containing coords for each line (x1, y1, x2, y2)
+        """
         return [endpoints_with_start[i: i + 2] for i in range(len(endpoints_with_start) - 1)]
 
     def generate_initial_configurations(self) -> dict:
@@ -205,75 +193,72 @@ class RobotArmMotion:
         :param k: how many of the closest neighbors to get
         :return: k-closest neighbors
         """
-        dist = sorted([(self.angular_distance(p, neigh), neigh) for neigh in neighbors if p != neigh])
+        dist = sorted([(self.get_config_dist(p, neigh), neigh) for neigh in neighbors if p != neigh])
         # dist = sorted([(self.angular_distance(p, n), n) for n in neighbors if n != p])
         return [tup for d, tup in dist[: k]]
 
     @staticmethod
-    def angular_distance(theta1: tuple, theta2: tuple) -> float:
+    def get_config_dist(theta1: tuple, theta2: tuple) -> float:
         """
         :param theta1:
         :param theta2:
         :return:
-        >>> a = (1, 2, 3); b = (4, 5, 6); print(RobotArmMotion.angular_distance(a, b))
+        >>> a = (1, 2, 3); b = (4, 5, 6); print(RobotArmMotion.get_config_dist(a, b))
         5.19615242271
-        >>> a = (0, 0); b = (0, 0); print(RobotArmMotion.angular_distance(a, b))
+        >>> a = (0, 0); b = (0, 0); print(RobotArmMotion.get_config_dist(a, b))
         0.0
         """
-        diffs = [RobotArmMotion.get_dist(a, b) for a, b in zip(theta1, theta2)]
+        diffs = [RobotArmMotion.get_angular_dist(a, b) for a, b in zip(theta1, theta2)]
         assert all([0 <= d <= pi for d in diffs])
-
-        euclidean_dist = sqrt(
-            sum(
-                # [abs((t1 - t2) % pi_times_2) ** 2 for t1, t2 in zip(theta1, theta2)]
-                [d ** 2 for d in diffs]
-            )
-        )
+        euclidean_dist = sqrt(sum([d ** 2 for d in diffs]))
         return euclidean_dist
 
     @staticmethod
-    def get_dist(a, b) -> float:
+    def get_angular_dist(angle1, angle2) -> float:
         pi_times_2 = 2 * pi
 
-        dist = abs(a - b) % pi_times_2
+        dist = abs(angle1 - angle2) % pi_times_2
         dist = min(dist, pi_times_2 - dist)
         assert 0 <= dist <= pi
         return dist
 
 
 if __name__ == '__main__':
-    # seed = 5
+    # seed = 1
     # random.seed(seed)
-    width = 700
-    height = 500
+    # print('Seed set to %d' % seed)
+    width = 600
+    height = 600
     canvas_mid_x = width // 2
     canvas_mid_y = height // 2
+    print('WARNING: Since these configurations are random and the obstacles form a pretty tight space'
+          ' there is a good chance there will not be a solution with the conservative parameter k=5.'
+          ' Give it a few tries.')
 
     robot_arm_count = 3
     start_state = [random.uniform(0, 2 * pi) for _ in range(robot_arm_count)]
     goal_state = [random.uniform(0, 2 * pi) for _ in range(robot_arm_count)]
-    # start_state = [1.393024861411571, 6.089091906185002, 4.719785764918847, 0.5262075278847457]
-    # goal_state = [5.7269810625040165, 4.207226403531826, 0.07372503284423317, 2.783575613814917]
 
-    obstacles1 = [
-        Polygon([[50, 50], [50, 100], [100, 100], [100, 50]]),
-        Polygon([[-80, -80], [-100, -100], [-80, -100], [-100, -80]])
-    ]
-    obstacles2 = [
-        Polygon([[-100, -100], [-100, -80], [-80, -80], [-80, -100]]),
-        Polygon([[100, 100], [100, 80], [80, 80], [80, 100]]),
-        Polygon([[100, -100], [80, -100], [80, -80], [100, -80]]),
-        Polygon([[-100, 80], [-100, 100], [-80, 80], [-100, 80]])
+    obstacles = [
+        [
+            Polygon([[60, 60], [60, 100], [100, 100], [100, 60]]),
+            Polygon([[-80, -80], [-100, -100], [-80, -100], [-100, -80]])
+        ],
+        [
+            Polygon([[-100, -100], [-100, -80], [-80, -80], [-80, -100]]),
+            Polygon([[100, 100], [100, 80], [80, 80], [80, 100]]),
+            Polygon([[100, -100], [80, -100], [80, -80], [100, -80]]),
+            Polygon([[-100, 80], [-100, 100], [-80, 80], [-100, 80]])
+        ],
+        [
+            Polygon([[60, 60], [60, 100], [100, 100], [100, 60]]),
+            Polygon([[-80, -80], [-100, -100], [-80, -100], [-100, -80]]),
+            Polygon([[-100, 80], [-100, 100], [-80, 80], [-100, 80]])
+        ]
     ]
 
     # set up the system
-    r = RobotArmMotion(
-        start=start_state,
-        goal=goal_state,
-        k=20,
-        step_count=75,
-        obstacles=obstacles2
-    )
+    r = RobotArmMotion(start=start_state, goal=goal_state, k=5, step_count=20, obstacles=obstacles[2])
 
     # solve it
     angle_config_result = r.solve()
@@ -295,26 +280,6 @@ if __name__ == '__main__':
 
     colors = [[random.uniform(0.2, 1) for i in range(3)] for _ in range(len(angle_config_result))]
     j = 0
-
-
-    def on_click(mx, my):
-        print("Mouse click! " + str(mx) + " " + str(my))
-
-
-    def on_move(mx, my):
-        pass
-
-
-    def on_release(mx, my):
-        print("Mouse up! " + str(mx) + " " + str(my))
-
-
-    def on_keydown(key):
-        print("Pressed " + key)
-
-
-    def on_keyup(key):
-        print("Released " + key)
 
 
     def get_x(my_x):
@@ -351,15 +316,25 @@ if __name__ == '__main__':
 
         for obs in r.obstacles:
             obs_x, obs_y, obs_xx, obs_yy = obs.bounds
-            width = obs_xx - obs_x
-            height = obs_yy - obs_y
+            w = abs(obs_xx - obs_x)
+            h = abs(obs_yy - obs_y)
             print(obs.bounds)
             print(get_x(obs_x), get_y(obs_y), get_x(obs_xx), get_y(obs_yy))
-            cs1lib.draw_rectangle(get_x(obs_x), get_y(obs_y), width, height)
 
-        # config = angle_config_result[j]
+            x_start = get_x(obs_x)
+            y_start = get_y(obs_y)
+            print('x_start: %d. w: %d ' % (x_start, w))
+            print('y_start: %d. h: %d' % (y_start, h))
+            cs1lib.draw_rectangle(get_x(min(obs_x, obs_xx)), get_y(max(obs_y, obs_yy)), w, h)
+
+        # state num.
         cs1lib.enable_stroke()
         cs1lib.draw_text("%d" % j, 20, 20)
+
+        # AXES
+        cs1lib.draw_line(get_x(-300), get_y(0), get_x(300), get_y(0))
+        cs1lib.draw_line(get_x(0), get_y(-300), get_x(0), get_y(300))
+
         j += 1
         if j == len(angle_config_result) - 1:  # goal state: show some message
             cs1lib.draw_text("GOAL", 20, 20)
@@ -369,6 +344,4 @@ if __name__ == '__main__':
         sleep(1)
 
 
-    cs1lib.start_graphics(draw, width=width, height=height, mouse_press=on_click, mouse_release=on_release,
-                          mouse_move=on_move,
-                          key_press=on_keydown)
+    cs1lib.start_graphics(draw, width=width, height=height)

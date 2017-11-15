@@ -80,6 +80,13 @@ After generating all possible states, I create an edge between an edge and its `
 getting the angular distance between a configuration state and every other state in the graph and sorting in ascending 
 order. The closest `k` neighbors are then connected to the vertex for this state in the graph.
 
+##### Calculating angular distances
+
+I was careful to calculate the angular distances between two angles as the shortest of the two distances when measuring
+angles on a unit circle: I consider both clockwise and counterclockwise distances and choose the shorter one of the two.
+I test this by calling `assert 0 <= dist <= pi` on every call. For details, please see the `get_angular_dist` and 
+`get_config_dist` functions.
+
 #### Choosing the parameters
 
 After running some tests, it seems that choosing a higher `k` generates a solution with fewer steps, and it leads to 
@@ -155,3 +162,20 @@ sampling methods.
 
 ### Tests
 
+For some of the tests, given the high number of steps, I included a video file instead of screenshots. These can be
+found in `report/media/1/`
+#### Test 1
+`obstacles=obstacles[1]`, `k=15`, `step_count=50`
+ 
+![alt text](media/1/ex1.jpg "Logo Title Text 1")
+
+#### Test 2
+
+`obstacles=obstacles[0]`, `k=5`, `step_count=20`
+
+See ex2.mp4 for an animated diagram.
+
+#### Other tests
+
+For more tests, see ex3.mp4 and others in `report/media/1/`. These were all generated with `k=5` and `step_count=20`.
+The initial and goal configurations were generated randomly.
